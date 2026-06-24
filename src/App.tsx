@@ -712,7 +712,7 @@ function HeroScene() {
       observer.disconnect();
       window.cancelAnimationFrame(rafId);
       mount.removeChild(renderer.domElement);
-      scene.traverse((object) => {
+      scene.traverse((object: THREE.Object3D) => {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();
         }
