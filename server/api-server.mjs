@@ -6,11 +6,13 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
 
-const PORT = Number(process.env.OSTIRO_API_PORT ?? 8787);
+const PORT = Number(process.env.PORT ?? process.env.OSTIRO_API_PORT ?? 8787);
+const HOST = process.env.HOST ?? (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
 const MAX_AUDIO_SIZE = 512 * 1024 * 1024;
 const TRANSCRIPTION_TIMEOUT_MS = Number(
   process.env.OSTIRO_TRANSCRIPTION_TIMEOUT_MS ?? 2 * 60 * 60 * 1000
 );
+const DIST_DIR = path.join(process.cwd(), "dist");
 const upload = multer({
   dest: path.join(os.tmpdir(), "ostiro-flow"),
   limits: { fileSize: MAX_AUDIO_SIZE }
@@ -47,6 +49,12 @@ app.post("/api/transcribe", upload.single("audio"), async (request, response) =>
   }
 });
 
+app.use(express.static(DIST_DIR));
+
+app.get("*", (_request, response) => {
+  response.sendFile(path.join(DIST_DIR, "index.html"));
+});
+
 app.use((error, _request, response, next) => {
   void next;
 
@@ -60,15 +68,16 @@ app.use((error, _request, response, next) => {
   response.status(500).json({ error: "Erreur serveur de transcription." });
 });
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Ostiro Flow API listening on http://127.0.0.1:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Ostiro Flow listening on http://${HOST}:${PORT}`);
 });
 
 function transcribeLocally(audioPath, language) {
   const scriptPath = path.join(process.cwd(), "server", "local_transcribe.py");
+  const pythonBinary = process.env.PYTHON_BIN ?? "python";
 
   return new Promise((resolve, reject) => {
-    const child = spawn("python", [scriptPath, audioPath], {
+    const child = spawn(pythonBinary, [scriptPath, audioPath], {
       env: {
         ...process.env,
         OSTIRO_TRANSCRIBE_LANGUAGE: language

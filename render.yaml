@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: ostiro-flow
+    env: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: OSTIRO_WHISPER_MODEL
+        value: base
+      - key: OSTIRO_WHISPER_DEVICE
+        value: cpu
+      - key: OSTIRO_WHISPER_COMPUTE_TYPE
+        value: int8
+      - key: OSTIRO_TRANSCRIPTION_TIMEOUT_MS
+        value: "7200000"

@@ -14,6 +14,29 @@ Interface : http://127.0.0.1:5173/
 
 API locale : http://127.0.0.1:8787/api/health
 
+## Déployer sur Render ou Railway
+
+Le projet peut tourner dans un seul service Docker : frontend Vite, serveur Express et transcription Whisper.
+
+Render :
+- créer un Web Service depuis ce dépôt ;
+- choisir Docker ;
+- health check : `/api/health`.
+
+Railway :
+- créer un service depuis ce dépôt ;
+- Railway détecte le `Dockerfile` ;
+- health check : `/api/health`.
+
+Variables utiles :
+
+```bash
+OSTIRO_WHISPER_MODEL=base
+OSTIRO_WHISPER_DEVICE=cpu
+OSTIRO_WHISPER_COMPUTE_TYPE=int8
+OSTIRO_TRANSCRIPTION_TIMEOUT_MS=7200000
+```
+
 ## Transcription locale
 
 Ostiro Flow utilise `faster-whisper` côté serveur local. Aucun appel API OpenAI n'est nécessaire.
