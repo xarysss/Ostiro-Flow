@@ -31,9 +31,14 @@ export function useLongRecorder() {
   const [audioSize, setAudioSize] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [chunkCount, setChunkCount] = useState(0);
+  const [inputLevel, setInputLevel] = useState(0);
+  const [soundDetected, setSoundDetected] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelFrameRef = useRef<number | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const sequenceRef = useRef(0);
   const sessionIdRef = useRef(createSessionId());
@@ -57,6 +62,55 @@ export function useLongRecorder() {
     }
     wakeLockRef.current = null;
   }, []);
+
+  const stopLevelMonitor = useCallback(() => {
+    if (levelFrameRef.current) {
+      window.cancelAnimationFrame(levelFrameRef.current);
+      levelFrameRef.current = null;
+    }
+
+    void audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    setInputLevel(0);
+    setSoundDetected(false);
+  }, []);
+
+  const startLevelMonitor = useCallback((stream: MediaStream) => {
+    stopLevelMonitor();
+
+    const AudioContextConstructor = window.AudioContext ?? window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+      return;
+    }
+
+    const audioContext = new AudioContextConstructor();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.72;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    audioContextRef.current = audioContext;
+    analyserRef.current = analyser;
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (const value of data) {
+        const centered = (value - 128) / 128;
+        sum += centered * centered;
+      }
+
+      const rms = Math.sqrt(sum / data.length);
+      const normalized = Math.min(1, rms * 7);
+      setInputLevel(normalized);
+      setSoundDetected(normalized > 0.09);
+      levelFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    tick();
+  }, [stopLevelMonitor]);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -135,6 +189,8 @@ export function useLongRecorder() {
       setDurationMs(0);
       setAudioSize(0);
       setChunkCount(0);
+      setInputLevel(0);
+      setSoundDetected(false);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -147,6 +203,7 @@ export function useLongRecorder() {
       const mimeType = pickMimeType();
       mimeTypeRef.current = mimeType;
       streamRef.current = stream;
+      startLevelMonitor(stream);
 
       const recorderOptions: MediaRecorderOptions = {
         audioBitsPerSecond: AUDIO_BITS_PER_SECOND
@@ -206,9 +263,10 @@ export function useLongRecorder() {
       setError(message);
       setRecorderState("idle");
       stopTimer();
+      stopLevelMonitor();
       return false;
     }
-  }, [audioUrl, finalizeAudio, setRecorderState, startTimer, stopTimer]);
+  }, [audioUrl, finalizeAudio, setRecorderState, startLevelMonitor, startTimer, stopLevelMonitor, stopTimer]);
 
   const pause = useCallback(() => {
     if (recorderRef.current?.state === "recording") {
@@ -243,9 +301,10 @@ export function useLongRecorder() {
     recorderRef.current = null;
     setRecorderState("stopped");
     stopTimer();
+    stopLevelMonitor();
     await releaseWakeLock();
     await stopped;
-  }, [releaseWakeLock, setRecorderState, stopTimer]);
+  }, [releaseWakeLock, setRecorderState, stopLevelMonitor, stopTimer]);
 
   const reset = useCallback(async () => {
     await stop(false);
@@ -285,12 +344,13 @@ export function useLongRecorder() {
     return () => {
       stopTimer();
       void releaseWakeLock();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+      stopLevelMonitor();
       if (audioUrl) {
         URL.revokeObjectURL(audioUrl);
       }
     };
-  }, [audioUrl, releaseWakeLock, stopTimer]);
+  }, [audioUrl, releaseWakeLock, stopLevelMonitor, stopTimer]);
 
   return {
     state,
@@ -298,6 +358,8 @@ export function useLongRecorder() {
     audioUrl,
     audioSize,
     chunkCount,
+    inputLevel,
+    soundDetected,
     error,
     start,
     pause,
